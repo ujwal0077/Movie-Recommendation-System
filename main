@@ -1,0 +1,135 @@
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <sstream>
+#include <cmath>
+#include <algorithm>
+
+using namespace std;
+
+// Function to load the ratings matrix from a CSV file
+vector<vector<int>> loadRatingsMatrix(const string &filename) {
+    vector<vector<int>> ratings;
+    ifstream file(filename);
+    string line;
+
+    while (getline(file, line)) {
+        vector<int> row;
+        stringstream ss(line);
+        string value;
+        while (getline(ss, value, ',')) {
+            row.push_back(stoi(value));
+        }
+        ratings.push_back(row);
+    }
+    return ratings;
+}
+
+// Function to calculate similarity between users using cosine similarity
+double calculateSimilarity(const vector<int> &user1, const vector<int> &user2) {
+    double dotProduct = 0, norm1 = 0, norm2 = 0;
+    for (size_t i = 0; i < user1.size(); ++i) {
+        if (user1[i] != 0 && user2[i] != 0) {
+            dotProduct += user1[i] * user2[i];
+            norm1 += user1[i] * user1[i];
+            norm2 += user2[i] * user2[i];
+        }
+    }
+    if (norm1 == 0 || norm2 == 0) return 0; // Handle division by zero
+    return dotProduct / (sqrt(norm1) * sqrt(norm2));
+}
+
+// Function to recommend top N movies for a user
+vector<pair<int, double>> recommendMovies(const vector<vector<int>> &ratings, int targetUser, int topN, vector<vector<int>>& predictedRatings) {
+    vector<pair<int, double>> recommendations;
+    vector<double> similarities;
+
+    for (size_t i = 0; i < ratings.size(); ++i) {
+        if (i != targetUser) {
+            double sim = calculateSimilarity(ratings[targetUser], ratings[i]);
+            similarities.push_back(sim);
+            cout << "Similarity with User " << i + 1 << ": " << sim << "\n";
+        } else {
+            similarities.push_back(0);
+        }
+    }
+
+    for (size_t movie = 0; movie < ratings[targetUser].size(); ++movie) {
+        if (ratings[targetUser][movie] == 0) {
+            double weightedSum = 0, sumOfWeights = 0;
+            for (size_t user = 0; user < ratings.size(); ++user) {
+                if (user != targetUser && ratings[user][movie] != 0) {
+                    weightedSum += similarities[user] * ratings[user][movie];
+                    sumOfWeights += abs(similarities[user]);
+                }
+            }
+            if (sumOfWeights != 0) {
+                double predictedRating = weightedSum / sumOfWeights;
+                predictedRatings[targetUser][movie] = predictedRating;  // Store predicted rating
+                recommendations.push_back({movie, predictedRating});
+                cout << "Predicted rating for Movie " << movie + 1 << ": " << predictedRating << "\n";
+            }
+        }
+    }
+
+    // Sort the recommendations by predicted rating in descending order
+    sort(recommendations.begin(), recommendations.end(), [](auto &a, auto &b) {
+        return b.second > a.second;
+    });
+
+    return recommendations;
+}
+
+// Function to calculate RMSE (Root Mean Square Error)
+double calculateRMSE(const vector<vector<int>> &actualRatings, const vector<vector<int>> &predictedRatings) {
+    double sumError = 0;
+    int count = 0;
+
+    for (size_t i = 0; i < actualRatings.size(); ++i) {
+        for (size_t j = 0; j < actualRatings[i].size(); ++j) {
+            if (actualRatings[i][j] != 0) { // Only calculate for rated movies
+                double error = actualRatings[i][j] - predictedRatings[i][j];
+                sumError += error * error;
+                ++count;
+            }
+        }
+    }
+    return sqrt(sumError / count); // Root Mean Square Error
+}
+
+// Main function
+int main() {
+    string filename = "ratings.csv";
+    vector<vector<int>> ratings = loadRatingsMatrix(filename);
+    vector<vector<int>> predictedRatings(ratings.size(), vector<int>(ratings[0].size(), 0));  // Store predicted ratings
+
+    int targetUser = 0; // First user (index 0)
+    int topN = 3;       // Desired number of top recommendations
+
+    auto recommendations = recommendMovies(ratings, targetUser, topN, predictedRatings);
+
+    // Get the actual number of recommendations made
+    int actualRecommendations = recommendations.size();
+
+    cout << "\nTop " << actualRecommendations << " recommended "
+         << (actualRecommendations == 1 ? "movie" : "movies") << " for User " << targetUser + 1 << ":\n";
+    for (const auto &rec : recommendations) {
+        cout << "Movie " << rec.first + 1 << " with predicted rating: " << rec.second << "\n";
+    }
+
+    // Calculate RMSE and provide the performance report
+    double rmse = calculateRMSE(ratings, predictedRatings);
+    cout << "\nPerformance Report:\n";
+    cout << "RMSE (Root Mean Square Error): " << rmse << endl;
+
+    // Provide a simple summary
+    if (rmse < 1.0) {
+        cout << "The system's predictions are highly accurate." << endl;
+    } else if (rmse < 2.0) {
+        cout << "The system's predictions are moderately accurate." << endl;
+    } else {
+        cout << "The system's predictions need improvement." << endl;
+    }
+
+    return 0;
+}
